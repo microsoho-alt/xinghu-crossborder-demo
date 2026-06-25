@@ -1,13 +1,16 @@
-import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Dict, List, Tuple
 
 import streamlit as st
 
 
 # =========================================================
-# 星狐 AI 跨境商品诊断舱 v4
-# 外部演示版：默认空白输入 + 简洁商业化UI + 公开部署友好
+# 星狐 AI 跨境商品诊断舱 v5
+# 外部演示增强版：
+# 1. 三类演示案例下拉选择，一键自动填写
+# 2. 报告结构升级为可交付版：摘要、评分、平台、风险、财务、任务、路线图
+# 3. 页面更偏商业演示和交付报告表达
 # =========================================================
 
 
@@ -46,6 +49,76 @@ MAX_SCORES = {
 }
 
 
+SAMPLE_CASES = {
+    "案例1：C端红海消费品｜车载手机支架": {
+        "name": "车载手机支架",
+        "category": "汽配 手机支架 汽车用品",
+        "factory_price_cny": "18",
+        "retail_price_usd": "9.99",
+        "exchange_rate": "7.2",
+        "platform_commission_rate": "0.15",
+        "estimated_logistics_cny": "18",
+        "weight_g": "200",
+        "length_cm": "10",
+        "width_cm": "8",
+        "height_cm": "5",
+        "material": "ABS塑料",
+        "has_battery": False,
+        "has_magnet": False,
+        "is_liquid_or_powder": False,
+        "is_fragile": False,
+        "certifications": ["无"],
+        "customer_type": "C端消费者",
+        "business_goal": "测品",
+        "product_description": "用于汽车出风口或中控台固定手机，适合导航、充电、长途驾驶场景。产品安装方便，客单价低，海外需求存在，但同质化严重，需要通过细分场景、套装组合和内容素材做差异化测试。",
+    },
+    "案例2：B端工业品｜硬质合金铣刀": {
+        "name": "硬质合金铣刀",
+        "category": "工业刀具 机械加工 五金工具",
+        "factory_price_cny": "45",
+        "retail_price_usd": "28.99",
+        "exchange_rate": "7.2",
+        "platform_commission_rate": "0.08",
+        "estimated_logistics_cny": "12",
+        "weight_g": "80",
+        "length_cm": "12",
+        "width_cm": "3",
+        "height_cm": "3",
+        "material": "钨钢",
+        "has_battery": False,
+        "has_magnet": False,
+        "is_liquid_or_powder": False,
+        "is_fragile": True,
+        "certifications": ["无"],
+        "customer_type": "工厂客户",
+        "business_goal": "找订单",
+        "product_description": "用于CNC数控加工、模具加工和金属切削场景，目标客户为海外加工厂、五金经销商和工业品采购商。产品依赖参数、耐用性、样品测试和批量采购转化，更适合B2B询盘和行业独立站获客。",
+    },
+    "案例3：带电小家电｜便携式迷你吸尘器": {
+        "name": "便携式迷你吸尘器",
+        "category": "小家电 消费电子 家居清洁",
+        "factory_price_cny": "68",
+        "retail_price_usd": "29.99",
+        "exchange_rate": "7.2",
+        "platform_commission_rate": "0.15",
+        "estimated_logistics_cny": "38",
+        "weight_g": "850",
+        "length_cm": "25",
+        "width_cm": "15",
+        "height_cm": "12",
+        "material": "ABS塑料 锂电池",
+        "has_battery": True,
+        "has_magnet": False,
+        "is_liquid_or_powder": False,
+        "is_fragile": False,
+        "certifications": ["CE", "RoHS"],
+        "customer_type": "C端消费者",
+        "business_goal": "做品牌",
+        "product_description": "面向车内清洁、桌面清洁、宠物毛发清理等高频生活场景，适合短视频展示和场景化种草。产品带电，涉及物流渠道、平台审核和目标市场认证要求，需要提前核查电池运输、CE/RoHS/FCC等合规资料。",
+    },
+}
+
+
 PLATFORM_RULES = {
     "Amazon": {
         "适合": ["中高客单价", "认证齐全", "物流稳定", "品牌化"],
@@ -79,25 +152,25 @@ def load_css():
         }
         .block-container {
             padding-top: 1.4rem;
-            max-width: 1180px;
+            max-width: 1220px;
         }
         .hero {
-            padding: 28px 32px;
+            padding: 30px 34px;
             border-radius: 24px;
-            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 48%, #2563eb 100%);
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%);
             color: #fff;
             margin-bottom: 22px;
-            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+            box-shadow: 0 16px 42px rgba(15, 23, 42, 0.22);
         }
         .hero h1 {
-            font-size: 34px;
+            font-size: 36px;
             line-height: 1.15;
-            margin: 0 0 8px 0;
-            letter-spacing: -0.5px;
+            margin: 0 0 10px 0;
+            letter-spacing: -0.6px;
         }
         .hero p {
             margin: 0;
-            color: rgba(255, 255, 255, .82);
+            color: rgba(255, 255, 255, .84);
             font-size: 15px;
         }
         .pill {
@@ -106,7 +179,7 @@ def load_css():
             padding: 6px 12px;
             border-radius: 999px;
             background: rgba(255, 255, 255, .14);
-            color: rgba(255, 255, 255, .92);
+            color: rgba(255, 255, 255, .94);
             font-size: 13px;
         }
         .section-card {
@@ -123,7 +196,7 @@ def load_css():
             background: #ffffff;
             border: 1px solid #e5e7eb;
             box-shadow: 0 8px 26px rgba(15, 23, 42, 0.05);
-            min-height: 110px;
+            min-height: 114px;
         }
         .metric-label {
             font-size: 13px;
@@ -131,10 +204,10 @@ def load_css():
             margin-bottom: 8px;
         }
         .metric-value {
-            font-size: 30px;
+            font-size: 28px;
             font-weight: 800;
             color: #0f172a;
-            line-height: 1.1;
+            line-height: 1.12;
         }
         .metric-sub {
             margin-top: 6px;
@@ -161,9 +234,10 @@ def load_css():
             color: #047857;
             border: 1px solid #a7f3d0;
         }
-        .muted {
-            color: #64748b;
-            font-size: 13px;
+        .dark {
+            background: #f1f5f9;
+            color: #334155;
+            border: 1px solid #cbd5e1;
         }
         .small-title {
             font-size: 18px;
@@ -179,6 +253,23 @@ def load_css():
             font-size: 13px;
             border: 1px solid #e2e8f0;
         }
+        .report-title {
+            padding: 20px 22px;
+            border-radius: 18px;
+            background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%);
+            border: 1px solid #dbeafe;
+            margin: 12px 0 18px 0;
+        }
+        .report-title h2 {
+            margin: 0 0 8px 0;
+            font-size: 26px;
+            color: #0f172a;
+        }
+        .report-title p {
+            margin: 0;
+            color: #64748b;
+            font-size: 14px;
+        }
         div[data-testid="stForm"] {
             border: 1px solid #e5e7eb;
             border-radius: 18px;
@@ -190,6 +281,14 @@ def load_css():
         """,
         unsafe_allow_html=True,
     )
+
+
+def clamp(value: float, min_value: int, max_value: int) -> int:
+    return int(max(min_value, min(max_value, round(value))))
+
+
+def contains_any(text: str, keywords: List[str]) -> bool:
+    return any(keyword.lower() in text.lower() for keyword in keywords)
 
 
 def parse_float(label: str, value: str, errors: List[str], required: bool = True, min_value: float = 0.0) -> float:
@@ -208,14 +307,6 @@ def parse_float(label: str, value: str, errors: List[str], required: bool = True
         errors.append(f"{label}不能小于{min_value}。")
         return 0.0
     return num
-
-
-def clamp(value: float, min_value: int, max_value: int) -> int:
-    return int(max(min_value, min(max_value, round(value))))
-
-
-def contains_any(text: str, keywords: List[str]) -> bool:
-    return any(keyword.lower() in text.lower() for keyword in keywords)
 
 
 def actual_weight_kg(product: ProductInput) -> float:
@@ -248,6 +339,10 @@ def estimated_margin_rate(product: ProductInput) -> float:
     if retail <= 0:
         return 0.0
     return round(estimated_single_profit_cny(product) / retail, 3)
+
+
+def break_even_ad_cost(product: ProductInput) -> float:
+    return max(0.0, round(estimated_single_profit_cny(product), 2))
 
 
 def normalize_certifications(certs: List[str]) -> List[str]:
@@ -306,8 +401,12 @@ def build_feature_vector(product: ProductInput) -> Dict:
         "产品类型判定": product_type,
         "价格带": price_band,
         "海外零售价人民币口径": retail_price_cny(product),
+        "出厂价": product.factory_price_cny,
+        "估算平台佣金": platform_commission_cny(product),
+        "估算单件物流费": product.estimated_logistics_cny,
         "估算单件利润": estimated_single_profit_cny(product),
         "扣费后利润率": margin,
+        "单件最大可承受广告成本": break_even_ad_cost(product),
         "实际重量kg": actual_weight_kg(product),
         "体积重kg": volume_weight_kg(product),
         "计费重量kg": c_weight,
@@ -325,7 +424,6 @@ def build_feature_vector(product: ProductInput) -> Dict:
 
 def match_platform_rules(product: ProductInput, vector: Dict) -> Dict[str, Dict]:
     result = {}
-
     industrial = vector["工业品倾向"] == "是"
     consumer = vector["消费品倾向"] == "是"
     margin = estimated_margin_rate(product)
@@ -369,6 +467,9 @@ def match_platform_rules(product: ProductInput, vector: Dict) -> Dict[str, Dict]
             if vector["物流重量带"] == "重货/大件":
                 score -= 10
                 reasons.append("重货不利于内容电商冲动成交和履约成本控制。")
+            if product.has_battery:
+                score -= 6
+                reasons.append("带电产品需要额外核查平台审核、物流和售后条件。")
 
         elif platform == "独立站":
             if margin >= 0.35:
@@ -548,6 +649,38 @@ def generate_level(total_score: int) -> str:
     return "暂不建议跨境电商化"
 
 
+def generate_decision(product: ProductInput, report: Dict) -> Dict[str, str]:
+    score = report["total_score"]
+    level = report["level"]
+    platforms = "、".join(report["platforms"])
+    weak = [k for k, v in report["scores"].items() if v / MAX_SCORES[k] < 0.55]
+
+    if score >= 88:
+        decision = "可进入优先测试池"
+        investment = "建议进入平台小批量上架与内容测试，投入节奏可适度前置。"
+    elif score >= 72:
+        decision = "适合测试，但需补齐关键资料"
+        investment = "建议先做轻量化测试，不建议一次性重仓广告或备货。"
+    elif score >= 58:
+        decision = "谨慎测试，先做小样本验证"
+        investment = "建议以7天小预算验证为主，先验证点击、询盘、加购和物流可行性。"
+    elif score >= 42:
+        decision = "暂不建议直接投入平台运营"
+        investment = "建议先补齐产品资料、认证、包装、价格模型或渠道路径。"
+    else:
+        decision = "暂不建议跨境电商化"
+        investment = "建议暂缓平台化投入，优先重新评估产品定位和成本结构。"
+
+    return {
+        "综合结论": decision,
+        "投入建议": investment,
+        "优先平台": platforms,
+        "主要短板": "、".join(weak) if weak else "暂无明显短板",
+        "建议验证周期": "7-14天小样本测试",
+        "报告等级": level,
+    }
+
+
 def recommend_platforms(platform_match: Dict[str, Dict]) -> List[str]:
     ranked = sorted(platform_match.items(), key=lambda x: x[1]["匹配分"], reverse=True)
     platforms = []
@@ -583,23 +716,23 @@ def generate_opc_tasks(product: ProductInput, scores: Dict[str, int], platform_m
     tasks = []
 
     if scores["合规风险可控度"] <= 8:
-        tasks.append({"触发原因": "合规风险偏高", "任务": "核查目标市场认证、平台禁限售、运输申报要求，形成合规资料清单。"})
+        tasks.append({"模块": "合规核查", "触发原因": "合规风险偏高", "任务": "核查目标市场认证、平台禁限售、运输申报要求，形成合规资料清单。", "交付物": "合规资料核查表"})
     if scores["物流履约适配度"] <= 10:
-        tasks.append({"触发原因": "物流履约压力", "任务": "向至少3家物流服务商询价，确认可发渠道、计费重量、异常件处理和退货规则。"})
+        tasks.append({"模块": "物流验证", "触发原因": "物流履约压力", "任务": "向至少3家物流服务商询价，确认可发渠道、计费重量、异常件处理和退货规则。", "交付物": "物流报价与履约风险表"})
     if scores["利润空间适配度"] <= 12:
-        tasks.append({"触发原因": "利润空间偏紧", "任务": "重算价格模型，拆分出厂价、平台佣金、物流费、广告费和售后成本。"})
+        tasks.append({"模块": "利润复核", "触发原因": "利润空间偏紧", "任务": "重算价格模型，拆分出厂价、平台佣金、物流费、广告费和售后成本。", "交付物": "单品利润测算表"})
     if scores["内容传播适配度"] <= 6:
-        tasks.append({"触发原因": "内容素材不足", "任务": "补拍产品使用场景素材，提炼用户痛点、差异化卖点和短视频脚本。"})
+        tasks.append({"模块": "内容补强", "触发原因": "内容素材不足", "任务": "补拍产品使用场景素材，提炼用户痛点、差异化卖点和短视频脚本。", "交付物": "素材清单与脚本草案"})
     if scores["竞争强度修正值"] <= 2:
-        tasks.append({"触发原因": "红海竞争", "任务": "完成差异化竞品分析，围绕场景、人群、套装、包装、价格带设计破局方案。"})
+        tasks.append({"模块": "竞争破局", "触发原因": "红海竞争", "任务": "完成差异化竞品分析，围绕场景、人群、套装、包装、价格带设计破局方案。", "交付物": "竞品分析与差异化方案"})
 
     platforms = recommend_platforms(platform_match)
     tasks.extend([
-        {"触发原因": "平台测试准备", "任务": f"围绕推荐平台（{'、'.join(platforms)}）完成20个海外竞品样本分析。"},
-        {"触发原因": "Listing冷启动", "任务": "生成英文标题、五点描述、长描述、搜索关键词和FAQ草稿。"},
-        {"触发原因": "素材标准化", "任务": "整理主图、场景图、尺寸图、卖点图、包装图和工厂资质素材。"},
-        {"触发原因": "小预算验证", "任务": "设计7天测品计划，设定曝光、点击、转化、询盘、加购和退款指标。"},
-        {"触发原因": "数据回流", "任务": "建立数据复盘表，把测试结果回流到产品适配度评分模型。"},
+        {"模块": "平台测试", "触发原因": "平台测试准备", "任务": f"围绕推荐平台（{'、'.join(platforms)}）完成20个海外竞品样本分析。", "交付物": "海外竞品样本表"},
+        {"模块": "Listing冷启动", "触发原因": "上架资料准备", "任务": "生成英文标题、五点描述、长描述、搜索关键词和FAQ草稿。", "交付物": "Listing初稿"},
+        {"模块": "素材标准化", "触发原因": "销售素材准备", "任务": "整理主图、场景图、尺寸图、卖点图、包装图和工厂资质素材。", "交付物": "跨境素材包"},
+        {"模块": "小预算验证", "触发原因": "低成本验证", "任务": "设计7天测品计划，设定曝光、点击、转化、询盘、加购和退款指标。", "交付物": "7天测品计划表"},
+        {"模块": "数据回流", "触发原因": "模型优化", "任务": "建立数据复盘表，把测试结果回流到产品适配度评分模型。", "交付物": "数据复盘表"},
     ])
     return tasks
 
@@ -630,7 +763,7 @@ def evaluate_product(product: ProductInput) -> Dict:
     platforms = recommend_platforms(platform_match)
     markets = recommend_markets(product, platforms)
 
-    return {
+    report = {
         "vector": vector,
         "platform_match": platform_match,
         "scores": scores,
@@ -647,43 +780,113 @@ def evaluate_product(product: ProductInput) -> Dict:
             "内容传播分析": content_notes,
             "竞争强度分析": competition_notes,
         },
-        "tasks": generate_opc_tasks(product, scores, platform_match),
     }
+    report["decision"] = generate_decision(product, report)
+    report["tasks"] = generate_opc_tasks(product, scores, platform_match)
+    return report
+
+
+def risk_level(score: int, max_score: int) -> str:
+    ratio = score / max_score
+    if ratio >= 0.75:
+        return "低风险"
+    if ratio >= 0.55:
+        return "中风险"
+    return "高风险"
+
+
+def generate_report_no(product: ProductInput) -> str:
+    clean_name = "".join([c for c in product.name if c.isalnum()])[:8] or "PRODUCT"
+    return f"XH-CB-{datetime.now().strftime('%Y%m%d%H%M')}-{clean_name}"
 
 
 def generate_markdown_report(product: ProductInput, report: Dict) -> str:
+    no = generate_report_no(product)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    decision = report["decision"]
+    vector = report["vector"]
+
     lines = []
-    lines.append(f"# {product.name} 跨境电商适配度诊断报告\n")
-    lines.append("## 一、诊断结论")
-    lines.append(f"- 总分：{report['total_score']} / 100")
-    lines.append(f"- 等级：{report['level']}")
-    lines.append(f"- 推荐平台：{'、'.join(report['platforms'])}")
-    lines.append(f"- 推荐市场：{'、'.join(report['markets'])}\n")
+    lines.append(f"# 星狐AI跨境商品诊断舱｜产品适配度诊断报告\n")
+    lines.append(f"**报告编号：** {no}  ")
+    lines.append(f"**生成时间：** {now}  ")
+    lines.append(f"**诊断对象：** {product.name}  ")
+    lines.append(f"**报告版本：** Demo v5｜外部演示版\n")
+    lines.append("> 说明：本报告基于产品基础信息、价格口径、物流约束、合规资料、平台适配规则和内容传播条件生成，用于跨境电商前期决策、产品测品准备和OPC任务拆解参考。\n")
 
-    lines.append("## 二、产品特征")
-    for k, v in report["vector"].items():
-        lines.append(f"- {k}：{v}")
+    lines.append("---\n")
+    lines.append("## 一、执行摘要")
+    lines.append(f"- **综合评分：** {report['total_score']} / 100")
+    lines.append(f"- **诊断等级：** {report['level']}")
+    lines.append(f"- **综合结论：** {decision['综合结论']}")
+    lines.append(f"- **投入建议：** {decision['投入建议']}")
+    lines.append(f"- **推荐平台：** {'、'.join(report['platforms'])}")
+    lines.append(f"- **推荐市场：** {'、'.join(report['markets'])}")
+    lines.append(f"- **主要短板：** {decision['主要短板']}")
+    lines.append(f"- **建议验证周期：** {decision['建议验证周期']}\n")
+
+    lines.append("## 二、产品基础画像")
+    lines.append("| 指标 | 结果 |")
+    lines.append("|---|---|")
+    for key in ["产品类型判定", "价格带", "客户类型", "企业诉求", "已有认证", "物流敏感属性", "描述完整度"]:
+        lines.append(f"| {key} | {vector[key]} |")
     lines.append("")
 
-    lines.append("## 三、维度评分")
+    lines.append("## 三、经营测算模型")
+    lines.append("| 项目 | 数值 |")
+    lines.append("|---|---:|")
+    lines.append(f"| 海外零售价（折人民币） | {vector['海外零售价人民币口径']} 元 |")
+    lines.append(f"| 出厂价 | {vector['出厂价']} 元 |")
+    lines.append(f"| 平台佣金估算 | {vector['估算平台佣金']} 元 |")
+    lines.append(f"| 单件物流费估算 | {vector['估算单件物流费']} 元 |")
+    lines.append(f"| 扣费后单件利润 | {vector['估算单件利润']} 元 |")
+    lines.append(f"| 扣费后利润率 | {vector['扣费后利润率'] * 100:.1f}% |")
+    lines.append(f"| 单件最大可承受广告成本 | {vector['单件最大可承受广告成本']} 元 |\n")
+
+    lines.append("## 四、七维评分矩阵")
+    lines.append("| 评估维度 | 得分 | 满分 | 风险等级 |")
+    lines.append("|---|---:|---:|---|")
     for k, v in report["scores"].items():
-        lines.append(f"- {k}：{v}/{MAX_SCORES[k]}")
+        lines.append(f"| {k} | {v} | {MAX_SCORES[k]} | {risk_level(v, MAX_SCORES[k])} |")
     lines.append("")
 
-    lines.append("## 四、平台匹配")
+    lines.append("## 五、平台适配与渠道建议")
+    lines.append("| 平台 | 匹配分 | 判断说明 |")
+    lines.append("|---|---:|---|")
     for platform, data in report["platform_match"].items():
-        lines.append(f"### {platform}")
-        lines.append(f"- 匹配分：{data['匹配分']}/100")
-        for reason in data["匹配理由"]:
-            lines.append(f"- {reason}")
+        lines.append(f"| {platform} | {data['匹配分']}/100 | {'；'.join(data['匹配理由'])} |")
     lines.append("")
 
-    lines.append("## 五、OPC运营任务")
-    for i, task in enumerate(report["tasks"], start=1):
-        lines.append(f"{i}. 【{task['触发原因']}】{task['任务']}")
+    lines.append("## 六、风险提示与补强方向")
+    for title, notes in report["notes"].items():
+        lines.append(f"### {title}")
+        for note in notes:
+            lines.append(f"- {note}")
+        lines.append("")
 
-    lines.append("\n## 六、技术链路")
-    lines.append("产品数据采集 → 标准化处理 → 产品特征向量生成 → 平台规则匹配 → 多维权重评分 → 风险提示 → OPC任务生成 → 数据回流")
+    lines.append("## 七、OPC运营任务拆解")
+    lines.append("| 序号 | 模块 | 触发原因 | 任务内容 | 交付物 |")
+    lines.append("|---:|---|---|---|---|")
+    for i, task in enumerate(report["tasks"], start=1):
+        lines.append(f"| {i} | {task['模块']} | {task['触发原因']} | {task['任务']} | {task['交付物']} |")
+    lines.append("")
+
+    lines.append("## 八、7天小样本验证路径")
+    lines.append("| 阶段 | 时间 | 核心动作 | 输出结果 |")
+    lines.append("|---|---|---|---|")
+    lines.append("| 准备期 | D1-D2 | 补齐认证、物流、竞品、素材和Listing草稿 | 测试准备包 |")
+    lines.append("| 上架期 | D3 | 完成平台测试页面或询盘页搭建 | 初始测试链接 |")
+    lines.append("| 测试期 | D4-D6 | 低预算投放或自然流量测试，记录曝光、点击、加购、询盘 | 测试数据表 |")
+    lines.append("| 复盘期 | D7 | 复盘利润、物流、内容、平台匹配与OPC执行质量 | 复盘报告与下一步建议 |\n")
+
+    lines.append("## 九、数据回流字段")
+    lines.append("建议后续将曝光量、点击率、加购率、转化率、询盘数、退款率、物流异常率、广告消耗、实际利润、企业满意度、OPC交付质量等数据回流至评分模型，用于持续优化产品适配度判断。\n")
+
+    lines.append("## 十、技术链路")
+    lines.append("产品数据采集 → 标准化处理 → 产品特征向量生成 → 平台规则匹配 → 多维权重评分 → 风险提示 → OPC任务生成 → 数据回流\n")
+
+    lines.append("---")
+    lines.append("**保密提示：** 本报告为系统自动生成的演示版诊断结果，仅供产品出海前期决策参考，不构成最终经营承诺或法律、税务、合规意见。")
     return "\n".join(lines)
 
 
@@ -705,23 +908,12 @@ def render_metric(label: str, value: str, sub: str = ""):
     )
 
 
-def fill_sample():
-    st.session_state["name"] = "车载手机支架"
-    st.session_state["category"] = "汽配 手机支架"
-    st.session_state["factory_price_cny"] = "18"
-    st.session_state["retail_price_usd"] = "9.99"
-    st.session_state["exchange_rate"] = "7.2"
-    st.session_state["platform_commission_rate"] = "0.15"
-    st.session_state["estimated_logistics_cny"] = "18"
-    st.session_state["weight_g"] = "200"
-    st.session_state["length_cm"] = "10"
-    st.session_state["width_cm"] = "8"
-    st.session_state["height_cm"] = "5"
-    st.session_state["material"] = "ABS塑料"
-    st.session_state["customer_type"] = "C端消费者"
-    st.session_state["business_goal"] = "测品"
-    st.session_state["certifications"] = ["无"]
-    st.session_state["product_description"] = "用于汽车出风口或中控台固定手机，适合导航、充电、长途驾驶场景，安装方便。"
+def apply_sample(sample_name: str):
+    if sample_name not in SAMPLE_CASES:
+        return
+    sample = SAMPLE_CASES[sample_name]
+    for k, v in sample.items():
+        st.session_state[k] = v
 
 
 def main():
@@ -732,20 +924,30 @@ def main():
     st.markdown(
         """
         <div class="hero notranslate">
-            <div class="pill">AI + 跨境电商 · 产品出海前置诊断 Demo</div>
+            <div class="pill">AI + 跨境电商 · 产品出海前置诊断 Demo v5</div>
             <h1>星狐AI跨境商品诊断舱</h1>
-            <p>输入一个制造业产品，系统自动完成特征识别、平台匹配、利润测算、风险提示与OPC任务生成。</p>
+            <p>输入一个制造业产品，系统自动完成特征识别、平台匹配、利润测算、风险提示、OPC任务拆解与交付型诊断报告生成。</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    with st.expander("演示说明", expanded=False):
-        st.write("本Demo默认不预填任何产品数据。演示人可现场输入真实产品信息，点击生成诊断报告。")
-        st.write("当前版本不保存用户输入，不连接数据库，不调用外部接口。刷新页面后数据不会持久保留。")
-        if st.button("填入一个测试样例"):
-            fill_sample()
-            st.rerun()
+    with st.expander("快速载入演示案例", expanded=True):
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            sample_choice = st.selectbox(
+                "选择一个演示样本",
+                ["不使用样本，手动填写"] + list(SAMPLE_CASES.keys()),
+                help="用于现场演示三类典型产品：C端红海、B端工业品、带电小家电。"
+            )
+        with c2:
+            st.write("")
+            st.write("")
+            if st.button("载入所选样本", use_container_width=True):
+                if sample_choice != "不使用样本，手动填写":
+                    apply_sample(sample_choice)
+                    st.success("样本已载入，可直接点击生成诊断报告。")
+                    st.rerun()
 
     left, right = st.columns([1.15, 0.85], gap="large")
 
@@ -773,13 +975,13 @@ def main():
             st.markdown("**产品特殊属性**")
             a, b, c, d = st.columns(4)
             with a:
-                has_battery = st.checkbox("带电")
+                has_battery = st.checkbox("带电", key="has_battery")
             with b:
-                has_magnet = st.checkbox("带磁")
+                has_magnet = st.checkbox("带磁", key="has_magnet")
             with c:
-                is_liquid_or_powder = st.checkbox("液体/粉末")
+                is_liquid_or_powder = st.checkbox("液体/粉末", key="is_liquid_or_powder")
             with d:
-                is_fragile = st.checkbox("易碎")
+                is_fragile = st.checkbox("易碎", key="is_fragile")
 
             c3, c4 = st.columns(2)
             with c3:
@@ -798,7 +1000,7 @@ def main():
                 "产品描述 / 使用场景 / 核心卖点",
                 placeholder="请简单描述产品用途、目标客户、使用场景、核心卖点。信息越完整，诊断越准确。",
                 key="product_description",
-                height=110
+                height=116
             )
 
             submitted = st.form_submit_button("生成诊断报告", use_container_width=True)
@@ -806,16 +1008,15 @@ def main():
     with right:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.markdown('<div class="small-title">Demo输出内容</div>', unsafe_allow_html=True)
-        st.write("系统将自动输出：")
-        render_tags(["跨境适配度评分", "推荐平台", "推荐市场"])
-        render_tags(["利润测算", "物流风险", "合规风险"], "risk")
-        render_tags(["产品特征向量", "平台规则匹配", "OPC任务清单"], "ok")
-        st.markdown('<div class="footer-note">建议演示时准备3个产品：一个C端消费品、一个B端工业品、一个带电小家电，这样更容易体现系统判断差异。</div>', unsafe_allow_html=True)
+        st.write("系统将生成一份可交付型诊断报告，包含：")
+        render_tags(["执行摘要", "产品画像", "经营测算"], "ok")
+        render_tags(["平台匹配", "七维评分", "风险矩阵"])
+        render_tags(["OPC任务拆解", "7天验证路径", "数据回流字段"], "dark")
+        st.markdown('<div class="footer-note">演示建议：先选一个样本直接跑，再手动修改价格、物流费或认证状态，观察系统结论变化。</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     if submitted:
         errors = []
-
         if not name.strip():
             errors.append("产品名称不能为空。")
         if not category.strip():
@@ -873,13 +1074,22 @@ def main():
     if "report" in st.session_state and "product" in st.session_state:
         report = st.session_state["report"]
         product = st.session_state["product"]
+        decision = report["decision"]
 
         st.markdown("---")
-        st.markdown("## 二、诊断结果")
+        st.markdown(
+            f"""
+            <div class="report-title">
+                <h2>二、产品适配度诊断报告</h2>
+                <p>诊断对象：{product.name} ｜ 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')} ｜ 报告版本：Demo v5</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
         m1, m2, m3, m4 = st.columns(4)
         with m1:
-            render_metric("跨境适配度总分", f"{report['total_score']}/100", "综合评分")
+            render_metric("跨境适配度总分", f"{report['total_score']}/100", decision["综合结论"])
         with m2:
             render_metric("诊断等级", report["level"], "系统结论")
         with m3:
@@ -887,26 +1097,49 @@ def main():
         with m4:
             render_metric("扣费后利润率", f"{report['vector']['扣费后利润率'] * 100:.1f}%", f"单件利润 {report['vector']['估算单件利润']} 元")
 
-        colp, colm = st.columns(2)
-        with colp:
-            st.markdown("### 推荐平台")
-            render_tags(report["platforms"])
-        with colm:
-            st.markdown("### 推荐市场")
-            render_tags(report["markets"])
+        st.markdown("### 1. 执行摘要")
+        summary_rows = [
+            {"项目": "综合结论", "内容": decision["综合结论"]},
+            {"项目": "投入建议", "内容": decision["投入建议"]},
+            {"项目": "推荐平台", "内容": "、".join(report["platforms"])},
+            {"项目": "推荐市场", "内容": "、".join(report["markets"])},
+            {"项目": "主要短板", "内容": decision["主要短板"]},
+            {"项目": "建议验证周期", "内容": decision["建议验证周期"]},
+        ]
+        st.table(summary_rows)
 
-        st.markdown("### 七维评分")
+        st.markdown("### 2. 七维评分矩阵")
+        score_rows = []
         for dimension, score in report["scores"].items():
+            score_rows.append({
+                "评估维度": dimension,
+                "得分": score,
+                "满分": MAX_SCORES[dimension],
+                "风险等级": risk_level(score, MAX_SCORES[dimension]),
+            })
             st.write(f"**{dimension}：{score} / {MAX_SCORES[dimension]}**")
             st.progress(score / MAX_SCORES[dimension])
+        st.table(score_rows)
 
-        tab1, tab2, tab3, tab4 = st.tabs(["产品特征", "平台匹配", "风险说明", "OPC任务"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["产品画像", "经营测算", "平台匹配", "风险说明", "OPC任务与验证路径"])
 
         with tab1:
             rows = [{"特征项": k, "识别结果": v} for k, v in report["vector"].items()]
             st.table(rows)
 
         with tab2:
+            finance_rows = [
+                {"项目": "海外零售价折人民币", "数值": f"{report['vector']['海外零售价人民币口径']} 元"},
+                {"项目": "出厂价", "数值": f"{report['vector']['出厂价']} 元"},
+                {"项目": "平台佣金估算", "数值": f"{report['vector']['估算平台佣金']} 元"},
+                {"项目": "单件物流费估算", "数值": f"{report['vector']['估算单件物流费']} 元"},
+                {"项目": "扣费后单件利润", "数值": f"{report['vector']['估算单件利润']} 元"},
+                {"项目": "扣费后利润率", "数值": f"{report['vector']['扣费后利润率'] * 100:.1f}%"},
+                {"项目": "单件最大可承受广告成本", "数值": f"{report['vector']['单件最大可承受广告成本']} 元"},
+            ]
+            st.table(finance_rows)
+
+        with tab3:
             for platform, data in report["platform_match"].items():
                 with st.expander(f"{platform}｜匹配分 {data['匹配分']} / 100", expanded=False):
                     st.write("**匹配理由**")
@@ -917,20 +1150,36 @@ def main():
                     st.write("**限制项**")
                     render_tags(data["限制项"], "risk")
 
-        with tab3:
+        with tab4:
             for title, notes in report["notes"].items():
                 with st.expander(title, expanded=True):
                     for note in notes:
                         st.write(f"- {note}")
 
-        with tab4:
+        with tab5:
+            task_rows = []
             for i, task in enumerate(report["tasks"], start=1):
-                st.write(f"{i}. **【{task['触发原因']}】** {task['任务']}")
+                task_rows.append({
+                    "序号": i,
+                    "模块": task["模块"],
+                    "触发原因": task["触发原因"],
+                    "任务内容": task["任务"],
+                    "交付物": task["交付物"],
+                })
+            st.table(task_rows)
 
-        st.markdown("### 导出报告")
+            st.markdown("#### 7天小样本验证路径")
+            st.table([
+                {"阶段": "准备期", "时间": "D1-D2", "核心动作": "补齐认证、物流、竞品、素材和Listing草稿", "输出结果": "测试准备包"},
+                {"阶段": "上架期", "时间": "D3", "核心动作": "完成平台测试页面或询盘页搭建", "输出结果": "初始测试链接"},
+                {"阶段": "测试期", "时间": "D4-D6", "核心动作": "低预算投放或自然流量测试，记录曝光、点击、加购、询盘", "输出结果": "测试数据表"},
+                {"阶段": "复盘期", "时间": "D7", "核心动作": "复盘利润、物流、内容、平台匹配与OPC执行质量", "输出结果": "复盘报告与下一步建议"},
+            ])
+
+        st.markdown("### 3. 导出交付型诊断报告")
         md = generate_markdown_report(product, report)
         st.download_button(
-            label="下载诊断报告",
+            label="下载完整诊断报告",
             data=md,
             file_name=f"{product.name}_跨境电商适配度诊断报告.md",
             mime="text/markdown",
