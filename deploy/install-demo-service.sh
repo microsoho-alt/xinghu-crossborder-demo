@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo=/opt/xinghu-crossborder-demo
+test -s /etc/global-role-intelligence/diagnosis-api-token
+install -o root -g root -m 0644 "$repo/deploy/xinghu-crossborder-demo.service" /etc/systemd/system/xinghu-crossborder-demo.service
+systemctl daemon-reload
+systemctl enable --now xinghu-crossborder-demo.service
+

@@ -1,0 +1,22 @@
+[Unit]
+Description=Xinghu outbound diagnosis Streamlit v5+
+After=network.target global-role-intelligence-web.service global-role-intelligence-diagnosis-worker.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/xinghu-crossborder-demo
+Environment=GRIP_DIAGNOSIS_API_URL=http://127.0.0.1:3100
+Environment=GRIP_DIAGNOSIS_API_TOKEN_FILE=/etc/global-role-intelligence/diagnosis-api-token
+ExecStart=/opt/xinghu-crossborder-demo/.venv/bin/streamlit run app.py --server.address 127.0.0.1 --server.port 8501 --server.baseUrlPath diagnosis --server.headless true --browser.gatherUsageStats false
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+MemoryMax=700M
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+

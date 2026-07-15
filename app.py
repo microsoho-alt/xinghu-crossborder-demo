@@ -1,8 +1,14 @@
 from dataclasses import dataclass
 from datetime import datetime
+import hashlib
+import html
+import time
 from typing import Dict, List, Tuple
+from uuid import uuid4
 
 import streamlit as st
+
+from diagnosis_client import DiagnosisApiClient, DiagnosisApiError, ImageAsset
 
 
 # =========================================================
@@ -277,6 +283,37 @@ def load_css():
             background: #ffffff;
             box-shadow: 0 8px 28px rgba(15, 23, 42, 0.04);
         }
+        .evidence-shell {
+            position: relative;
+            overflow: hidden;
+            padding: 24px;
+            border-radius: 20px;
+            border: 1px solid #d8d3c8;
+            background: linear-gradient(145deg, #fffef9 0%, #f6f3ea 100%);
+            box-shadow: 0 16px 40px rgba(34, 31, 24, .08);
+            margin: 12px 0 18px;
+        }
+        .evidence-shell::before {
+            content: "EVIDENCE LEDGER";
+            position: absolute;
+            right: -8px;
+            top: 18px;
+            color: rgba(36, 48, 47, .08);
+            font: 800 28px Georgia, serif;
+            letter-spacing: 3px;
+        }
+        .evidence-kicker { color: #a53a2a; font: 700 12px Georgia, serif; letter-spacing: 1.6px; text-transform: uppercase; }
+        .evidence-title { color: #24302f; font: 800 25px Georgia, "Songti SC", serif; margin: 7px 0; }
+        .evidence-note { color: #5d625d; font-size: 13px; max-width: 760px; }
+        .claim-card { border-left: 4px solid #147d78; background: #f7fbf9; padding: 14px 16px; border-radius: 4px 14px 14px 4px; margin: 8px 0; }
+        .claim-card.risk-red { border-left-color: #aa3328; background: #fff6f3; }
+        .claim-card.risk-yellow { border-left-color: #c88b21; background: #fffaf0; }
+        .claim-meta { color: #6c706b; font-size: 12px; margin-top: 6px; }
+        .source-chip { display:inline-block; border:1px solid #c9c5b9; border-radius:999px; padding:3px 8px; margin-right:5px; font-size:11px; color:#525650; background:#fff; }
+        .source-chip.evidence { color:#0f6d64; border-color:#8dc8be; }
+        .source-chip.inference { color:#795b16; border-color:#d7bd76; }
+        .source-chip.unknown { color:#9c3328; border-color:#d7a49f; }
+        .image-frame { border:1px dashed #b8b2a5; border-radius:16px; padding:10px; background:#faf8f1; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -916,10 +953,301 @@ def apply_sample(sample_name: str):
         st.session_state[k] = v
 
 
+def get_diagnosis_client() -> DiagnosisApiClient:
+    return DiagnosisApiClient()
+
+
+def _remember_uploaded_file(uploaded):
+    if uploaded is None:
+        return
+    content = uploaded.getvalue()
+    if not content:
+        return
+    if len(content) > 5 * 1024 * 1024:
+        st.warning(f"{uploaded.name} 超过 5 MiB，未加入图片证据。")
+        return
+    media_type = getattr(uploaded, "type", "")
+    if media_type not in {"image/jpeg", "image/png", "image/webp"}:
+        st.warning(f"{uploaded.name} 不是支持的 JPEG / PNG / WebP 图片。")
+        return
+    digest = hashlib.sha256(content).hexdigest()
+    assets = st.session_state.setdefault("image_assets", {})
+    if digest not in st.session_state.setdefault("deleted_image_hashes", set()) and len(assets) < 4:
+        assets[digest] = ImageAsset(uploaded.name, media_type, content)
+
+
+def render_image_workspace(client: DiagnosisApiClient):
+    with st.expander("产品图片识别与证据建议", expanded=True):
+        st.markdown(
+            '<div class="evidence-shell"><div class="evidence-kicker">PHOTO → EVIDENCE</div><div class="evidence-title">先看图，再由你确认产品事实</div><div class="evidence-note">最多 4 张，每张不超过 5 MiB。图片只生成建议，不会覆盖手工字段；认证、价格、规格和敏感属性缺少证据时必须保持未知。</div></div>',
+            unsafe_allow_html=True,
+        )
+        upload_col, camera_col = st.columns(2)
+        with upload_col:
+            uploads = st.file_uploader("上传产品图", type=["jpg", "jpeg", "png", "webp"], accept_multiple_files=True, key="product_photo_uploads")
+            for uploaded in uploads or []:
+                _remember_uploaded_file(uploaded)
+        with camera_col:
+            camera = st.camera_input("现场拍摄", key="product_camera")
+            _remember_uploaded_file(camera)
+
+        assets = st.session_state.setdefault("image_assets", {})
+        if assets:
+            st.caption(f"已进入本次诊断证据区：{len(assets)} / 4 张")
+            cols = st.columns(min(4, len(assets)))
+            for index, (digest, asset) in enumerate(list(assets.items())):
+                with cols[index % len(cols)]:
+                    st.image(asset.content, caption=asset.filename, width="stretch")
+                    if st.button("移除", key=f"remove_image_{digest}", width="stretch"):
+                        assets.pop(digest, None)
+                        st.session_state["deleted_image_hashes"].add(digest)
+                        st.session_state.pop("extraction_result", None)
+                        st.session_state.pop("extraction_draft", None)
+                        st.rerun()
+
+            context = st.text_input("给识别的补充线索（可选）", placeholder="例如：这是用于 CNC 加工的刀具，不确定具体材质", key="image_context")
+            if st.button("识别图片并生成待确认建议", type="primary", width="stretch", disabled=not client.configured):
+                idempotency = "ui-extract-" + hashlib.sha256(("".join(sorted(assets)) + context).encode()).hexdigest()[:32]
+                try:
+                    with st.spinner("正在核验图片并提取可见证据…"):
+                        result = client.extract(idempotency, assets.values(), context)
+                    st.session_state["extraction_result"] = result["suggestions"]
+                    st.session_state["extraction_draft"] = {"draftId": result["draftId"], "accessToken": result["accessToken"]}
+                except DiagnosisApiError as exc:
+                    st.error(str(exc))
+            if not client.configured:
+                st.info("图片可继续预览并随手工资料进入 v5 报告；融合诊断服务配置完成后，这里会出现结构化识别建议。")
+        else:
+            st.caption("也可以完全不上传图片，继续使用原有样本或手工输入流程。")
+
+        extraction = st.session_state.get("extraction_result")
+        if extraction:
+            suggestions = extraction.get("suggestions", [])
+            st.markdown("#### 待确认建议")
+            if suggestions:
+                selected = []
+                for index, suggestion in enumerate(suggestions):
+                    label = f"{suggestion.get('field', '字段')} → {suggestion.get('value', '')}（置信度 {suggestion.get('confidence', 0) * 100:.0f}%）"
+                    if st.checkbox(label, key=f"accept_suggestion_{index}"):
+                        selected.append(suggestion)
+                    st.caption(f"图片证据：{suggestion.get('evidence', '未说明')}。勾选后仍可在表单中修改。")
+                if st.button("应用已勾选建议", width="stretch"):
+                    applied = apply_selected_suggestions(selected)
+                    st.success(f"已应用 {applied} 项；请继续在标准档案中核对。")
+                    st.rerun()
+            else:
+                st.warning("图片中没有足够可验证的信息可安全写入字段，请以实物资料或人工输入为准。")
+            for warning in extraction.get("warnings", []):
+                st.caption(f"⚠ {warning}")
+            if extraction.get("missingInformation"):
+                st.caption("仍需补充：" + "、".join(extraction["missingInformation"]))
+
+
+def apply_selected_suggestions(suggestions: List[Dict]) -> int:
+    field_map = {
+        "name": "name", "category": "category", "material": "material", "description": "product_description",
+        "factoryPriceCny": "factory_price_cny", "retailPriceUsd": "retail_price_usd", "weightG": "weight_g",
+        "lengthCm": "length_cm", "widthCm": "width_cm", "heightCm": "height_cm", "hasBattery": "has_battery",
+        "hasMagnet": "has_magnet", "isLiquidOrPowder": "is_liquid_or_powder", "isFragile": "is_fragile",
+        "certifications": "certifications",
+    }
+    applied_values = st.session_state.setdefault("image_applied_values", {})
+    count = 0
+    for suggestion in suggestions:
+        canonical = suggestion.get("field")
+        widget = field_map.get(canonical)
+        if not widget:
+            continue
+        value = suggestion.get("value")
+        if widget in {"factory_price_cny", "retail_price_usd", "weight_g", "length_cm", "width_cm", "height_cm"}:
+            value = str(value)
+        st.session_state[widget] = value
+        applied_values[canonical] = value
+        count += 1
+    return count
+
+
+def parse_list_text(value: str) -> List[str]:
+    return [item.strip() for item in value.replace("，", ",").replace("\n", ",").split(",") if item.strip()]
+
+
+def build_canonical_product(product: ProductInput, extras: Dict[str, str], report: Dict) -> Dict:
+    product_type = report["vector"]["产品类型判定"]
+    product_class = "industrial" if "B端工业" in product_type else "consumer" if "C端消费" in product_type else "hybrid" if "混合" in product_type else "unknown"
+    extraction = st.session_state.get("extraction_result", {})
+    missing = parse_list_text(extras.get("missing_information", ""))
+    missing.extend(extraction.get("missingInformation", []))
+    values = {
+        "name": product.name, "category": product.category, "description": product.product_description, "material": product.material,
+        "factoryPriceCny": product.factory_price_cny, "retailPriceUsd": product.retail_price_usd, "exchangeRate": product.exchange_rate,
+        "platformCommissionRate": product.platform_commission_rate, "estimatedLogisticsCny": product.estimated_logistics_cny,
+        "weightG": product.weight_g, "lengthCm": product.length_cm, "widthCm": product.width_cm, "heightCm": product.height_cm,
+        "hasBattery": product.has_battery, "hasMagnet": product.has_magnet, "isLiquidOrPowder": product.is_liquid_or_powder,
+        "isFragile": product.is_fragile, "certifications": normalize_certifications(product.certifications),
+        "customerType": product.customer_type, "businessGoal": product.business_goal,
+    }
+    applied = st.session_state.get("image_applied_values", {})
+    evidence = {}
+    for field, value in values.items():
+        from_image = field in applied and str(applied[field]) == str(value)
+        evidence[field] = {"source": "image" if from_image else "user", "confidence": 0.7 if from_image else 1.0, **({"reference": "image:confirmed"} if from_image else {})}
+    return {
+        **values,
+        "aliases": parse_list_text(extras.get("aliases", "")),
+        "productClass": product_class,
+        "specifications": parse_list_text(extras.get("specifications", "")),
+        "useScenarios": parse_list_text(extras.get("use_scenarios", "")),
+        "purchaserRoles": parse_list_text(extras.get("purchaser_roles", "")),
+        "userRoles": parse_list_text(extras.get("user_roles", "")),
+        "missingInformation": list(dict.fromkeys(missing))[:30],
+        "intendedMarkets": parse_list_text(extras.get("intended_markets", "")),
+        "intendedChannels": parse_list_text(extras.get("intended_channels", "")),
+        "fieldEvidence": evidence,
+    }
+
+
+def start_remote_diagnosis(client: DiagnosisApiClient, canonical: Dict):
+    if not client.configured:
+        return
+    pending_key = st.session_state.setdefault("pending_diagnosis_key", f"ui-diag-{uuid4()}")
+    draft = st.session_state.get("extraction_draft")
+    assets = st.session_state.get("image_assets", {}).values()
+    try:
+        result = client.create(pending_key, canonical, assets, draft.get("draftId") if draft else None, draft.get("accessToken") if draft else None)
+        st.session_state["diagnosis_handle"] = {"diagnosisId": result["diagnosisId"], "accessToken": result["accessToken"]}
+        st.session_state["just_started_diagnosis"] = True
+        st.session_state.pop("pending_diagnosis_key", None)
+    except DiagnosisApiError as exc:
+        st.warning(f"v5 报告已生成；融合诊断将在服务恢复后使用同一幂等任务继续：{exc}")
+
+
+def render_diagnosis_reloader(client: DiagnosisApiClient):
+    with st.sidebar.expander("重新打开已保存报告"):
+        recovery = st.text_input("报告恢复码", type="password", help="恢复码只用于服务端读取已保存快照，不会重新运行分析。")
+        if st.button("载入报告", width="stretch"):
+            try:
+                diagnosis_id, token = recovery.strip().split(":", 1)
+                result = client.result(diagnosis_id, token)
+                st.session_state["diagnosis_handle"] = {"diagnosisId": diagnosis_id, "accessToken": token}
+                st.session_state["fused_result"] = result
+                st.success("报告已从持久化快照载入。")
+            except (ValueError, DiagnosisApiError):
+                st.error("恢复码无效或报告尚未完成。")
+
+
+def refresh_remote_diagnosis(client: DiagnosisApiClient):
+    handle = st.session_state.get("diagnosis_handle")
+    if not handle or not client.configured:
+        return
+    diagnosis_id, token = handle["diagnosisId"], handle["accessToken"]
+    progress = st.progress(0, text="正在读取诊断进度…")
+    iterations = 40 if st.session_state.pop("just_started_diagnosis", False) else 1
+    try:
+        for _ in range(iterations):
+            status = client.status(diagnosis_id, token)
+            progress.progress(status["progressPercent"] / 100, text=status["events"][-1]["publicMessage"] if status.get("events") else "任务已接收")
+            if status["status"] == "SUCCEEDED":
+                st.session_state["fused_result"] = client.result(diagnosis_id, token)
+                break
+            if status["status"] == "FAILED":
+                st.warning("融合诊断未完成；资料与进度已保存，可稍后用恢复码重试查看。")
+                break
+            time.sleep(0.5)
+        if status["status"] not in {"SUCCEEDED", "FAILED"} and st.button("刷新融合进度", width="stretch"):
+            st.rerun()
+        st.caption("报告恢复码（请自行妥善保存）")
+        st.code(f"{diagnosis_id}:{token}", language=None)
+    except DiagnosisApiError as exc:
+        st.warning(str(exc))
+
+
+def claim_card(claim: Dict, style: str = ""):
+    labels = {"evidence": "证据", "inference": "推断", "unknown": "未知", "recommendation": "建议"}
+    kind = claim.get("kind", "unknown")
+    refs = "".join(f'<span class="source-chip evidence">{html.escape(str(ref))}</span>' for ref in claim.get("evidenceRefs", [])[:4])
+    st.markdown(
+        f'<div class="claim-card {style}"><span class="source-chip {kind}">{labels.get(kind, "未知")}</span><strong>{html.escape(str(claim.get("topic", "判断")))}</strong><div>{html.escape(str(claim.get("statement", "")))}</div><div class="claim-meta">置信度 {float(claim.get("confidence", 0)) * 100:.0f}% · {html.escape(str(claim.get("rationale", "")))}</div><div>{refs}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_fused_report(client: DiagnosisApiClient):
+    result = st.session_state.get("fused_result")
+    if not result:
+        return
+    report = result.get("report", {})
+    st.markdown("### 4. 多源融合增量报告")
+    confidence = report.get("confidence", {})
+    st.markdown(
+        f'<div class="evidence-shell"><div class="evidence-kicker">FUSED COMMERCIAL BRIEF</div><div class="evidence-title">共识保留，冲突可见，未知不补写</div><div class="evidence-note">总置信度 {float(confidence.get("overall", 0)) * 100:.0f}% · {html.escape(str(confidence.get("method", "")))}</div></div>',
+        unsafe_allow_html=True,
+    )
+    groups = [("机会判断", report.get("opportunity", [])), ("目标市场", report.get("targetMarkets", [])), ("渠道适配", report.get("channelFit", [])), ("下一步行动", report.get("nextActions", []))]
+    for title, claims in groups:
+        if claims:
+            st.markdown(f"#### {title}")
+            for claim in claims:
+                claim_card(claim)
+    red = report.get("risks", {}).get("red", [])
+    yellow = report.get("risks", {}).get("yellow", [])
+    if red or yellow:
+        st.markdown("#### 红 / 黄风险")
+        r1, r2 = st.columns(2)
+        with r1:
+            st.markdown("**红色｜先处理再投入**")
+            for claim in red:
+                claim_card(claim, "risk-red")
+        with r2:
+            st.markdown("**黄色｜边验证边补证据**")
+            for claim in yellow:
+                claim_card(claim, "risk-yellow")
+    if report.get("disagreements"):
+        st.markdown("#### 分歧与不确定性")
+        for disagreement in report["disagreements"]:
+            with st.expander(disagreement.get("topic", "分析分歧")):
+                for position in disagreement.get("positions", []):
+                    st.write(f"- {position.get('source', '独立分析')}：{position.get('statement', '')}")
+                st.caption(disagreement.get("resolution", ""))
+    if report.get("missingEvidence"):
+        st.markdown("#### 尚缺证据")
+        render_tags(report["missingEvidence"], "risk")
+
+    with st.expander("本次融合快照包含的 v5 完整交付结构"):
+        st.write("执行摘要、产品画像、经营测算、七维评分、平台分析、风险、OPC任务、7天验证路径、数据回流字段与技术链路均已写入不可变报告版本。页面上方继续保留原 v5 的逐项展示与下载。")
+
+    with st.form("diagnosis_feedback_form"):
+        st.markdown("#### 这份报告是否有用、准确？")
+        usefulness = st.slider("实用性", 1, 5, 4)
+        accuracy = st.slider("准确性", 1, 5, 4)
+        comment = st.text_area("补充反馈（可选）", max_chars=1000)
+        if st.form_submit_button("提交报告反馈", width="stretch"):
+            try:
+                handle = st.session_state["diagnosis_handle"]
+                client.feedback(handle["diagnosisId"], handle["accessToken"], usefulness, accuracy, comment)
+                st.success("反馈已保存，将用于后续评估。")
+            except DiagnosisApiError as exc:
+                st.error(str(exc))
+
+    with st.expander("稍后回填真实结果"):
+        with st.form("diagnosis_outcome_form"):
+            inquiries = st.number_input("实际询盘数", min_value=0, step=1)
+            actual_profit = st.number_input("实际利润（人民币，可为负）", step=1.0)
+            outcome_notes = st.text_area("结果说明", max_chars=2000)
+            if st.form_submit_button("保存结果反馈", width="stretch"):
+                try:
+                    handle = st.session_state["diagnosis_handle"]
+                    client.outcome(handle["diagnosisId"], handle["accessToken"], datetime.now().astimezone().isoformat(), {"inquiries": inquiries, "actualProfitCny": actual_profit}, outcome_notes)
+                    st.success("结果反馈已保存，无需重新运行诊断。")
+                except DiagnosisApiError as exc:
+                    st.error(str(exc))
+
+
 def main():
     st.set_page_config(page_title="星狐AI跨境商品诊断舱 Demo", page_icon="🦊", layout="wide")
     st.markdown('<meta name="google" content="notranslate">', unsafe_allow_html=True)
     load_css()
+    diagnosis_client = get_diagnosis_client()
+    render_diagnosis_reloader(diagnosis_client)
 
     st.markdown(
         """
@@ -943,11 +1271,13 @@ def main():
         with c2:
             st.write("")
             st.write("")
-            if st.button("载入所选样本", use_container_width=True):
+            if st.button("载入所选样本", width="stretch"):
                 if sample_choice != "不使用样本，手动填写":
                     apply_sample(sample_choice)
                     st.success("样本已载入，可直接点击生成诊断报告。")
                     st.rerun()
+
+    render_image_workspace(diagnosis_client)
 
     left, right = st.columns([1.15, 0.85], gap="large")
 
@@ -988,7 +1318,6 @@ def main():
                 certifications = st.multiselect(
                     "已有认证",
                     ["无", "CE", "FCC", "RoHS", "FDA", "UKCA", "UL", "REACH"],
-                    default=[],
                     key="certifications",
                     placeholder="请选择已有认证"
                 )
@@ -1003,7 +1332,21 @@ def main():
                 height=116
             )
 
-            submitted = st.form_submit_button("生成诊断报告", use_container_width=True)
+            with st.expander("补充标准产品档案（可选）"):
+                st.caption("图片和文字最终汇合到同一份可修订档案；以下内容不会改变原 v5 计算公式。")
+                e1, e2 = st.columns(2)
+                with e1:
+                    aliases = st.text_input("产品别名", placeholder="多个别名用逗号分隔", key="canonical_aliases")
+                    specifications = st.text_area("规格参数", placeholder="例如：直径6mm, 四刃, 总长50mm", key="canonical_specifications", height=80)
+                    use_scenarios = st.text_input("使用场景", placeholder="例如：CNC加工, 模具加工", key="canonical_use_scenarios")
+                    purchaser_roles = st.text_input("采购角色", placeholder="例如：工厂采购, 经销商", key="canonical_purchaser_roles")
+                with e2:
+                    user_roles = st.text_input("实际使用者", placeholder="例如：机加工操作员", key="canonical_user_roles")
+                    intended_markets = st.text_input("意向市场", placeholder="例如：德国, 美国", key="canonical_intended_markets")
+                    intended_channels = st.text_input("意向渠道", placeholder="例如：B2B平台, 独立站", key="canonical_intended_channels")
+                    missing_information = st.text_area("仍不确定 / 待补证据", placeholder="例如：目标国认证要求, 实际运价", key="canonical_missing_information", height=80)
+
+            submitted = st.form_submit_button("生成诊断报告", width="stretch")
 
     with right:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
@@ -1070,6 +1413,16 @@ def main():
 
         st.session_state["report"] = evaluate_product(product)
         st.session_state["product"] = product
+        extras = {
+            "aliases": aliases, "specifications": specifications, "use_scenarios": use_scenarios,
+            "purchaser_roles": purchaser_roles, "user_roles": user_roles, "intended_markets": intended_markets,
+            "intended_channels": intended_channels, "missing_information": missing_information,
+        }
+        canonical = build_canonical_product(product, extras, st.session_state["report"])
+        st.session_state["canonical_product"] = canonical
+        start_remote_diagnosis(diagnosis_client, canonical)
+
+    refresh_remote_diagnosis(diagnosis_client)
 
     if "report" in st.session_state and "product" in st.session_state:
         report = st.session_state["report"]
@@ -1124,7 +1477,7 @@ def main():
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["产品画像", "经营测算", "平台匹配", "风险说明", "OPC任务与验证路径"])
 
         with tab1:
-            rows = [{"特征项": k, "识别结果": v} for k, v in report["vector"].items()]
+            rows = [{"特征项": k, "识别结果": str(v)} for k, v in report["vector"].items()]
             st.table(rows)
 
         with tab2:
@@ -1183,7 +1536,7 @@ def main():
             data=md,
             file_name=f"{product.name}_跨境电商适配度诊断报告.md",
             mime="text/markdown",
-            use_container_width=True,
+            width="stretch",
         )
 
         st.markdown(
@@ -1194,6 +1547,8 @@ def main():
             """,
             unsafe_allow_html=True,
         )
+
+    render_fused_report(diagnosis_client)
 
 
 if __name__ == "__main__":
