@@ -27,6 +27,17 @@ class DecisionExperienceTests(unittest.TestCase):
         self.assertEqual(scenario["retailPriceUsd"], 12.99)
         self.assertEqual(scenario["marketAssumption"], "东南亚")
 
+    def test_persisted_v2_profile_restores_v5_context_without_provider_work(self):
+        profile = {
+            "name": "恢复样品", "category": "工业刀具", "factoryPriceCny": 45, "retailPriceUsd": 28.99,
+            "exchangeRate": 7.2, "platformCommissionRate": .08, "estimatedLogisticsCny": 12,
+            "weightG": 80, "lengthCm": 12, "widthCm": 3, "heightCm": 3, "customerType": "工厂客户",
+            "businessGoal": "找订单", "material": "钨钢", "description": "恢复用确定性产品档案",
+            "hasBattery": False, "hasMagnet": False, "isLiquidOrPowder": False, "isFragile": True,
+            "certifications": [],
+        }
+        self.assertTrue(app.restore_local_v5_context({"productProfile": profile}))
+
 
 if __name__ == "__main__":
     unittest.main()

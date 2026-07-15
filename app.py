@@ -1187,6 +1187,7 @@ def render_diagnosis_reloader(client: DiagnosisApiClient):
                 result = client.result(diagnosis_id, token)
                 st.session_state["diagnosis_handle"] = {"diagnosisId": diagnosis_id, "accessToken": token}
                 st.session_state["fused_result"] = result
+                restore_local_v5_context(result.get("report", {}))
                 st.success("报告已从持久化快照载入。")
             except (ValueError, DiagnosisApiError):
                 st.error("恢复码无效或报告尚未完成。")
@@ -1628,6 +1629,27 @@ def sample_v2_report():
         "decisionModules": modules, "opportunities": cards, "blockingRisks": cards, "actions": actions,
         "unitEconomics": {"baseline": {"profitCny": 12, "marginRate": .18}, "completeness": "incomplete", "missingCosts": ["advertisingAllowanceCny"], "disclaimer": "不代表完整利润"},
     }
+
+
+def restore_local_v5_context(snapshot: Dict) -> bool:
+    profile = snapshot.get("productProfile", {}) if isinstance(snapshot, dict) else {}
+    required = ["name", "category", "factoryPriceCny", "retailPriceUsd", "exchangeRate", "platformCommissionRate", "estimatedLogisticsCny", "weightG", "lengthCm", "widthCm", "heightCm", "customerType", "businessGoal"]
+    if not isinstance(profile, dict) or any(key not in profile for key in required):
+        return False
+    product = ProductInput(
+        name=str(profile["name"]), category=str(profile["category"]), factory_price_cny=float(profile["factoryPriceCny"]),
+        retail_price_usd=float(profile["retailPriceUsd"]), exchange_rate=float(profile["exchangeRate"]),
+        platform_commission_rate=float(profile["platformCommissionRate"]), estimated_logistics_cny=float(profile["estimatedLogisticsCny"]),
+        weight_g=float(profile["weightG"]), length_cm=float(profile["lengthCm"]), width_cm=float(profile["widthCm"]), height_cm=float(profile["heightCm"]),
+        material=str(profile.get("material") or "未填写"), has_battery=bool(profile.get("hasBattery")), has_magnet=bool(profile.get("hasMagnet")),
+        is_liquid_or_powder=bool(profile.get("isLiquidOrPowder")), is_fragile=bool(profile.get("isFragile")),
+        certifications=list(profile.get("certifications") or ["无"]), customer_type=str(profile["customerType"]),
+        business_goal=str(profile["businessGoal"]), product_description=str(profile.get("description") or ""),
+    )
+    st.session_state["product"] = product
+    st.session_state["report"] = evaluate_product(product)
+    st.session_state["canonical_product"] = profile
+    return True
 
 
 def normalize_decision_report(report: Dict) -> Dict:
