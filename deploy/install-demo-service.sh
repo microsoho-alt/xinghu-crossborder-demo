@@ -7,5 +7,6 @@ install -o root -g root -m 0644 "$repo/deploy/xinghu-crossborder-demo.service" /
 install -o root -g root -m 0644 "$repo/deploy/nginx/xinghu-crossborder-demo.conf" /etc/nginx/conf.d/xinghu-crossborder-demo.conf
 nginx -t
 systemctl daemon-reload
-systemctl enable --now xinghu-crossborder-demo.service
+systemctl enable xinghu-crossborder-demo.service
+systemctl restart xinghu-crossborder-demo.service
 systemctl reload nginx
