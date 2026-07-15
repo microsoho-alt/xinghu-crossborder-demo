@@ -44,6 +44,17 @@ class DiagnosisClientTests(unittest.TestCase):
         self.assertIsNone(request["json"])
         self.assertEqual(request["headers"]["X-Diagnosis-Access-Token"], "opaque-access")
 
+    def test_scenario_uses_saved_report_access_without_changing_baseline(self):
+        session = FakeSession([FakeResponse(201, {"data": {"created": True, "version": 1, "result": {"deltas": {"profitCny": 8}}}})])
+        client = DiagnosisApiClient("http://127.0.0.1:9999", "a" * 24, session)
+        payload = {"schemaVersion": "diagnosis-scenario-v1", "name": "降本", "estimatedLogisticsCny": 10, "persist": True}
+        result = client.scenario("diagnosis-id", "opaque-access", payload)
+        method, url, request = session.calls[0]
+        self.assertEqual((method, url), ("POST", "http://127.0.0.1:9999/api/diagnoses/diagnosis-id/scenarios"))
+        self.assertEqual(request["headers"]["X-Diagnosis-Access-Token"], "opaque-access")
+        self.assertEqual(request["json"], payload)
+        self.assertEqual(result["version"], 1)
+
     def test_api_errors_are_bounded(self):
         session = FakeSession([FakeResponse(500, {"error": {"message": "x" * 1000, "raw": "secret"}})])
         client = DiagnosisApiClient("http://127.0.0.1:9999", "a" * 24, session)
@@ -53,4 +64,3 @@ class DiagnosisClientTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

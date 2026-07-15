@@ -154,7 +154,7 @@ def load_css():
         """
         <style>
         html, body, [class*="css"] {
-            font-family: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+            font-family: "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
         }
         .block-container {
             padding-top: 1.4rem;
@@ -163,8 +163,8 @@ def load_css():
         .hero {
             padding: 30px 34px;
             border-radius: 24px;
-            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%);
-            color: #fff;
+            background: radial-gradient(circle at 88% 18%, rgba(190, 148, 64, .2), transparent 24%), linear-gradient(135deg, #132420 0%, #193c34 58%, #205246 100%);
+            color: #f8f4e8;
             margin-bottom: 22px;
             box-shadow: 0 16px 42px rgba(15, 23, 42, 0.22);
         }
@@ -314,6 +314,37 @@ def load_css():
         .source-chip.inference { color:#795b16; border-color:#d7bd76; }
         .source-chip.unknown { color:#9c3328; border-color:#d7a49f; }
         .image-frame { border:1px dashed #b8b2a5; border-radius:16px; padding:10px; background:#faf8f1; }
+        .journey-kicker { color:#8b6b2b; font-size:12px; font-weight:800; letter-spacing:1.4px; text-transform:uppercase; }
+        .journey-title { font-family:"Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif; font-size:28px; color:#172b26; margin:4px 0 8px; }
+        .completion-shell { padding:14px 16px; border:1px solid #d9d2c4; background:#fbfaf6; border-radius:14px; margin:10px 0 18px; }
+        .cockpit { border:1px solid #cfc8b9; border-radius:24px; padding:28px; background:linear-gradient(145deg,#fffef9,#f3f0e7); box-shadow:0 18px 50px rgba(31,45,39,.10); margin:12px 0 20px; }
+        .cockpit.conditional { border-top:7px solid #b77a16; }
+        .cockpit.proceed { border-top:7px solid #17745e; }
+        .cockpit.pause { border-top:7px solid #a72e2e; }
+        .decision-eyebrow { font-size:12px; font-weight:850; letter-spacing:1.5px; color:#6d7169; }
+        .decision-label { font-family:"Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif; font-size:40px; line-height:1.1; color:#172b26; margin:9px 0; }
+        .decision-reason { font-size:17px; line-height:1.7; color:#35443f; max-width:900px; }
+        .confidence-line { margin-top:14px; color:#6a6e67; font-size:13px; }
+        .signal-card { height:100%; padding:17px; border-radius:16px; border:1px solid #d9d4c8; background:#fff; }
+        .signal-card.opportunity { border-top:4px solid #17745e; background:#f5fbf7; }
+        .signal-card.blocking { border-top:4px solid #a72e2e; background:#fff7f5; }
+        .signal-rank { color:#77766f; font-size:11px; font-weight:800; letter-spacing:1px; }
+        .signal-title { color:#1c332d; font-size:16px; font-weight:850; margin:7px 0; }
+        .signal-meaning { color:#535e59; font-size:13px; line-height:1.55; }
+        .action-card { padding:16px 18px; border-left:4px solid #b77a16; background:#fffaf0; border-radius:4px 14px 14px 4px; margin:8px 0; }
+        .threshold { color:#6d581f; font-size:12px; margin-top:5px; }
+        .delta-up { color:#126b55; font-weight:800; }
+        .delta-down { color:#a72e2e; font-weight:800; }
+        @media (max-width: 640px) {
+          .block-container { padding: .75rem .8rem 2rem; }
+          .hero { padding:22px 19px; border-radius:18px; }
+          .hero h1 { font-size:29px; }
+          .cockpit { padding:20px 17px; border-radius:18px; }
+          .decision-label { font-size:31px; }
+          .decision-reason { font-size:15px; }
+          .metric-value { font-size:23px; overflow-wrap:anywhere; }
+          [data-testid="stDataFrame"], [data-testid="stTable"] { overflow-x:auto; }
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -1071,6 +1102,20 @@ def parse_list_text(value: str) -> List[str]:
     return [item.strip() for item in value.replace("，", ",").replace("\n", ",").split(",") if item.strip()]
 
 
+def optional_float(value):
+    text = str(value or "").strip().replace("，", ".").replace(",", "")
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def optional_bool(value):
+    return True if value == "是" else False if value == "否" else None
+
+
 def build_canonical_product(product: ProductInput, extras: Dict[str, str], report: Dict) -> Dict:
     product_type = report["vector"]["产品类型判定"]
     product_class = "industrial" if "B端工业" in product_type else "consumer" if "C端消费" in product_type else "hybrid" if "混合" in product_type else "unknown"
@@ -1102,6 +1147,18 @@ def build_canonical_product(product: ProductInput, extras: Dict[str, str], repor
         "missingInformation": list(dict.fromkeys(missing))[:30],
         "intendedMarkets": parse_list_text(extras.get("intended_markets", "")),
         "intendedChannels": parse_list_text(extras.get("intended_channels", "")),
+        "advertisingAllowanceCny": optional_float(extras.get("advertising_allowance", "")),
+        "returnAfterSalesReserveCny": optional_float(extras.get("return_reserve", "")),
+        "marketDemandEvidence": parse_list_text(extras.get("market_demand_evidence", "")),
+        "competitorEvidence": parse_list_text(extras.get("competitor_evidence", "")),
+        "moqUnits": optional_float(extras.get("moq_units", "")),
+        "monthlyCapacityUnits": optional_float(extras.get("monthly_capacity", "")),
+        "leadTimeDays": optional_float(extras.get("lead_time_days", "")),
+        "qualityControlReady": optional_bool(extras.get("quality_control_ready", "未知")),
+        "localizedContentReady": optional_bool(extras.get("localized_content_ready", "未知")),
+        "operationsOwnerReady": optional_bool(extras.get("operations_owner_ready", "未知")),
+        "validationBudgetCny": optional_float(extras.get("validation_budget", "")),
+        "validationWindowDays": optional_float(extras.get("validation_window_days", "")),
         "fieldEvidence": evidence,
     }
 
@@ -1242,7 +1299,7 @@ def render_fused_report(client: DiagnosisApiClient):
                     st.error(str(exc))
 
 
-def main():
+def legacy_main():
     st.set_page_config(page_title="星狐AI跨境商品诊断舱 Demo", page_icon="🦊", layout="wide")
     st.markdown('<meta name="google" content="notranslate">', unsafe_allow_html=True)
     load_css()
@@ -1549,6 +1606,359 @@ def main():
         )
 
     render_fused_report(diagnosis_client)
+
+
+def sample_v2_report():
+    module_ids = [
+        "demand_signal", "customer_chain", "market_fit", "channel_fit", "competition", "unit_economics",
+        "logistics", "compliance", "supply_chain", "content_readiness", "operational_readiness", "validation_feasibility",
+    ]
+    modules = [{
+        "id": module_id, "label": f"决策模块 {index + 1}", "score": 60 + index, "weight": 8,
+        "confidence": .65, "evidenceRefs": ["input:confirmed"], "inferences": ["待验证推断"], "unknowns": [],
+        "positiveDrivers": ["已有用户确认输入"], "lostScoreDrivers": ["真实市场数据待补"],
+        "improvementLevers": ["完成小样本验证"], "nextValidationQuestion": "是否达到目标行动？",
+        "validationThreshold": "7天内至少3个目标行动", "causalChain": ["输入", "规则", "决策"],
+    } for index, module_id in enumerate(module_ids)]
+    cards = [{"id": f"card-{index}", "moduleId": module_ids[index], "title": f"关键信号 {index + 1}", "meaning": "需要用小样本确认", "impact": 8 - index, "confidence": .65, "evidenceRefs": ["input:confirmed"], "action": "进入验证"} for index in range(3)]
+    actions = [{"priority": index + 1, "sourceModule": module_ids[index], "title": f"验证动作 {index + 1}", "why": "降低关键不确定性", "metric": "目标行动数", "passThreshold": "≥3", "failThreshold": "连续2天为0则停止"} for index in range(3)]
+    return {
+        "schemaVersion": "fused-diagnosis-report-v2", "modelVersion": "xinghu-decision-model-v2.0.0",
+        "decisionCockpit": {"state": "CONDITIONAL", "label": "满足条件后验证", "reason": "关键成本和需求证据尚未闭环。", "confidence": .62, "missingInformationWarning": ["外部需求证据"], "topReasons": ["利润有空间", "需求待证", "合规待核"], "mostInfluentialVariable": {"label": "海外零售价", "currentValue": 9.99, "threshold": "12.50 美元", "direction": "提高价格或降本", "explanation": "改变单位经济"}},
+        "decisionModules": modules, "opportunities": cards, "blockingRisks": cards, "actions": actions,
+        "unitEconomics": {"baseline": {"profitCny": 12, "marginRate": .18}, "completeness": "incomplete", "missingCosts": ["advertisingAllowanceCny"], "disclaimer": "不代表完整利润"},
+    }
+
+
+def normalize_decision_report(report: Dict) -> Dict:
+    schema = report.get("schemaVersion", "fused-diagnosis-report-v1") if isinstance(report, dict) else "fused-diagnosis-report-v1"
+    if schema == "fused-diagnosis-report-v2":
+        normalized = dict(report)
+        normalized["sourceSchemaVersion"] = schema
+        normalized["opportunities"] = list(report.get("opportunities", []))[:3]
+        normalized["blockingRisks"] = list(report.get("blockingRisks", []))[:3]
+        normalized["actions"] = list(report.get("actions", []))[:3]
+        normalized["decisionModules"] = list(report.get("decisionModules", []))
+        return normalized
+    summary = report.get("executionSummary", {}) if isinstance(report, dict) else {}
+    score = float(summary.get("totalScore", 0) or 0)
+    state = "PROCEED" if score >= 72 else "CONDITIONAL" if score >= 48 else "PAUSE"
+    labels = {"PROCEED": "建议进入验证", "CONDITIONAL": "满足条件后验证", "PAUSE": "暂缓投入"}
+    missing = list(report.get("missingEvidence", [])) if isinstance(report, dict) else []
+    placeholders = [
+        {"title": "沿用 v5 确定性结论", "meaning": str(summary.get("conclusion", "已保存历史判断")), "confidence": .5, "action": "按原报告执行小样本验证"},
+        {"title": "历史财务口径可追溯", "meaning": "价格、佣金与物流仍按原始快照展示", "confidence": .8, "action": "补齐广告与售后成本"},
+        {"title": "报告无需重新分析", "meaning": "当前内容来自不可变历史快照", "confidence": 1, "action": "需要时创建新诊断"},
+    ]
+    risks = [{"title": item, "meaning": "历史报告未补写该证据", "confidence": 1, "action": "补证后重新验证"} for item in (missing + ["完整单位经济", "十二模块深度"])[0:3]]
+    actions = [{"priority": i + 1, "title": card["action"], "why": card["meaning"], "metric": "证据闭环", "passThreshold": "取得可核验事实", "failThreshold": "仍未知则不扩大投入"} for i, card in enumerate(risks)]
+    return {
+        "sourceSchemaVersion": schema,
+        "decisionCockpit": {"state": state, "label": labels[state], "reason": "这是历史报告兼容视图；原始快照未改写，建议结合 v2 新诊断补齐决策深度。", "confidence": float(report.get("confidence", {}).get("overall", .5) or .5), "missingInformationWarning": missing, "topReasons": [item["meaning"] for item in placeholders], "mostInfluentialVariable": {"label": "完整成本", "currentValue": "历史口径", "threshold": "补齐广告与售后成本", "direction": "先补证", "explanation": "历史报告未包含 v2 敏感性字段。"}},
+        "opportunities": placeholders, "blockingRisks": risks, "actions": actions, "decisionModules": [],
+        "unitEconomics": {"completeness": "incomplete", "baseline": {}, "missingCosts": ["v2 fields"], "disclaimer": "历史口径不代表完整利润"},
+    }
+
+
+def build_scenario_payload(name: str, baseline: Dict, *, retail_price_usd: float, logistics_cny: float, commission_rate: float, ad_allowance_cny: float, return_reserve_cny: float, market: str = "", channel: str = "") -> Dict:
+    del baseline
+    payload = {
+        "schemaVersion": "diagnosis-scenario-v1", "name": name.strip() or "对比方案",
+        "retailPriceUsd": float(retail_price_usd), "estimatedLogisticsCny": float(logistics_cny),
+        "platformCommissionRate": float(commission_rate), "advertisingAllowanceCny": float(ad_allowance_cny),
+        "returnAfterSalesReserveCny": float(return_reserve_cny), "persist": True,
+    }
+    if market.strip():
+        payload["marketAssumption"] = market.strip()
+    if channel.strip():
+        payload["channelAssumption"] = channel.strip()
+    return payload
+
+
+def render_signal_cards(title: str, cards: List[Dict], kind: str):
+    st.markdown(f"### {title}")
+    columns = st.columns(3)
+    for index, card in enumerate(cards[:3]):
+        with columns[index]:
+            st.markdown(
+                f'<div class="signal-card {kind}"><div class="signal-rank">0{index + 1}</div><div class="signal-title">{html.escape(str(card.get("title", "待验证")))}</div><div class="signal-meaning">{html.escape(str(card.get("meaning", "")))}</div><div class="claim-meta">置信度 {float(card.get("confidence", 0)) * 100:.0f}% · 下一步：{html.escape(str(card.get("action", "补齐证据")))}</div></div>',
+                unsafe_allow_html=True,
+            )
+
+
+def render_decision_cockpit(report: Dict):
+    normalized = normalize_decision_report(report)
+    cockpit = normalized["decisionCockpit"]
+    style = {"PROCEED": "proceed", "CONDITIONAL": "conditional", "PAUSE": "pause"}.get(cockpit.get("state"), "conditional")
+    missing = cockpit.get("missingInformationWarning", [])
+    warning = " · 仍缺：" + "、".join(str(item) for item in missing[:3]) if missing else " · 关键输入已覆盖"
+    st.markdown(
+        f'<div class="cockpit {style}"><div class="decision-eyebrow">DECISION COCKPIT · 先看结论</div><div class="decision-label">{html.escape(str(cockpit.get("label", "满足条件后验证")))}</div><div class="decision-reason">{html.escape(str(cockpit.get("reason", "")))}</div><div class="confidence-line">决策置信度 {float(cockpit.get("confidence", 0)) * 100:.0f}%{html.escape(warning)}</div></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown("#### 三个最强判断依据")
+    for reason in cockpit.get("topReasons", [])[:3]:
+        st.markdown(f"- {reason}")
+    render_signal_cards("前三个机会", normalized.get("opportunities", []), "opportunity")
+    render_signal_cards("三个阻断风险", normalized.get("blockingRisks", []), "blocking")
+    variable = cockpit.get("mostInfluentialVariable", {})
+    st.markdown("### 最可能改变结论的变量")
+    st.markdown(f'<div class="section-card"><div class="journey-kicker">MOST INFLUENTIAL</div><div class="journey-title">{html.escape(str(variable.get("label", "关键成本")))}</div><p><b>当前：</b>{html.escape(str(variable.get("currentValue", "未知")))}　<b>改变门槛：</b>{html.escape(str(variable.get("threshold", "待补证")))}</p><p>{html.escape(str(variable.get("explanation", "")))} · {html.escape(str(variable.get("direction", "先补证")))}</p></div>', unsafe_allow_html=True)
+    st.markdown("### 接下来只做三件事")
+    for action in normalized.get("actions", [])[:3]:
+        st.markdown(f'<div class="action-card"><b>{int(action.get("priority", 1))}. {html.escape(str(action.get("title", "验证")))}</b><div>{html.escape(str(action.get("why", "")))}</div><div class="threshold">通过：{html.escape(str(action.get("passThreshold", "达到验证门槛")))} ｜ 停止：{html.escape(str(action.get("failThreshold", "越过止损线")))}</div></div>', unsafe_allow_html=True)
+    st.markdown("<small>可执行动作：返回上方修正输入、在下方比较场景，或展开模块检查证据。多源融合增量报告已保存；共识保留，冲突可见，未知不补写。</small>", unsafe_allow_html=True)
+    return normalized
+
+
+def render_module_exploration(normalized: Dict):
+    modules = normalized.get("decisionModules", [])
+    st.markdown("## 二、按需深入：十二个决策模块")
+    if not modules:
+        st.info("这是 v1 历史快照。十二模块没有被伪造或回填；请创建一次新诊断以获得 v2 深度结果。")
+        return
+    for index, module in enumerate(modules, start=1):
+        with st.expander(f"{index:02d} · {module.get('label', '决策模块')}｜{module.get('score', 0)}分 · 权重{module.get('weight', 0)}% · 置信度{float(module.get('confidence', 0)) * 100:.0f}%"):
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**事实 / 证据引用**")
+                for item in module.get("evidenceRefs", []) or ["无外部证据"]:
+                    st.write(f"- {item}")
+                st.markdown("**正向驱动**")
+                for item in module.get("positiveDrivers", []): st.write(f"- {item}")
+                st.markdown("**推断（待验证）**")
+                for item in module.get("inferences", []): st.write(f"- {item}")
+            with c2:
+                st.markdown("**未知 / 缺失**")
+                for item in module.get("unknowns", []) or ["未发现显式缺失"]: st.write(f"- {item}")
+                st.markdown("**失分原因**")
+                for item in module.get("lostScoreDrivers", []): st.write(f"- {item}")
+                st.markdown("**改善杠杆**")
+                for item in module.get("improvementLevers", []): st.write(f"- {item}")
+            st.info(f"下一验证问题：{module.get('nextValidationQuestion', '')}\n\n通过门槛：{module.get('validationThreshold', '')}")
+            st.caption(" → ".join(str(item) for item in module.get("causalChain", [])))
+
+
+def render_scenario_lab(client: DiagnosisApiClient, normalized: Dict, raw_report: Dict):
+    st.markdown("## 三、场景实验室")
+    profile = raw_report.get("productProfile", {})
+    if not profile or normalized.get("sourceSchemaVersion") != "fused-diagnosis-report-v2":
+        st.info("v2 基线完成后可比较售价、物流、佣金、广告、售后准备金与市场/渠道假设。")
+        return
+    economics = normalized.get("unitEconomics", {}).get("baseline", {})
+    with st.form("scenario_lab_form"):
+        st.caption("场景只创建新的不可变对比版本，不修改用户确认的基线。")
+        name = st.text_input("场景名称", value="可行性改善方案")
+        a, b, c = st.columns(3)
+        with a:
+            price = st.number_input("场景售价（美元）", min_value=0.0, value=float(profile.get("retailPriceUsd", 0.0)))
+            logistics = st.number_input("场景物流费（人民币）", min_value=0.0, value=float(profile.get("estimatedLogisticsCny", 0.0)))
+        with b:
+            commission = st.number_input("场景平台佣金率", min_value=0.0, max_value=0.5, value=float(profile.get("platformCommissionRate", 0.0)), step=.01)
+            ad = st.number_input("广告成本 allowance（人民币）", min_value=0.0, value=float(economics.get("advertisingAllowanceCny", 0.0)))
+        with c:
+            returns = st.number_input("退货售后准备金（人民币）", min_value=0.0, value=float(economics.get("returnAfterSalesReserveCny", 0.0)))
+            market = st.text_input("场景市场假设", value=(profile.get("intendedMarkets") or [""])[0])
+            channel = st.text_input("场景渠道假设", value=(profile.get("intendedChannels") or [""])[0])
+        submitted = st.form_submit_button("计算并保存场景对比", width="stretch")
+    if submitted:
+        try:
+            handle = st.session_state["diagnosis_handle"]
+            payload = build_scenario_payload(name, profile, retail_price_usd=price, logistics_cny=logistics, commission_rate=commission, ad_allowance_cny=ad, return_reserve_cny=returns, market=market, channel=channel)
+            st.session_state["scenario_result"] = client.scenario(handle["diagnosisId"], handle["accessToken"], payload)
+            st.success("场景已作为新版本保存；基线未改变。")
+        except (DiagnosisApiError, KeyError) as exc:
+            st.error(str(exc) if str(exc) else "场景暂时无法保存。")
+    saved = st.session_state.get("scenario_result", {}).get("result")
+    if saved:
+        base, alt, delta = saved.get("baseline", {}), saved.get("alternative", {}), saved.get("deltas", {})
+        x, y = st.columns(2)
+        with x: render_metric("基线利润", f"{base.get('profitCny', 0)} 元", base.get("decisionLabel", ""))
+        with y: render_metric("方案利润", f"{alt.get('profitCny', 0)} 元", alt.get("decisionLabel", ""))
+        direction = "delta-up" if float(delta.get("profitCny", 0)) >= 0 else "delta-down"
+        st.markdown(f'<p class="{direction}">利润变化 {float(delta.get("profitCny", 0)):+.2f} 元 · 综合分 {float(delta.get("weightedScore", 0)):+.1f} · 风险 {float(delta.get("riskScore", 0)):+.1f}</p>', unsafe_allow_html=True)
+        for module in saved.get("affectedModules", []):
+            st.write(f"- {module.get('id')} {float(module.get('scoreDelta', 0)):+.1f}：{'；'.join(module.get('reasons', []))}")
+
+
+def render_professional_report(product: ProductInput, report: Dict, client: DiagnosisApiClient):
+    decision = report["decision"]
+    st.markdown("## 四、专业版 v5 完整报告")
+    st.table([{"项目": key, "内容": value} for key, value in decision.items()])
+    st.markdown("### 七维评分矩阵")
+    score_rows = []
+    for dimension, score in report["scores"].items():
+        score_rows.append({"评估维度": dimension, "得分": score, "满分": MAX_SCORES[dimension], "风险等级": risk_level(score, MAX_SCORES[dimension])})
+        st.write(f"**{dimension}：{score} / {MAX_SCORES[dimension]}**")
+        st.progress(score / MAX_SCORES[dimension])
+    st.table(score_rows)
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["产品画像", "经营测算", "平台匹配", "风险说明", "OPC任务与验证路径"])
+    with tab1:
+        st.table([{"特征项": key, "识别结果": str(value)} for key, value in report["vector"].items()])
+    with tab2:
+        keys = ["海外零售价人民币口径", "出厂价", "估算平台佣金", "估算单件物流费", "估算单件利润", "扣费后利润率", "单件最大可承受广告成本"]
+        st.table([{"项目": key, "数值": report["vector"].get(key)} for key in keys])
+    with tab3:
+        for platform, data in report["platform_match"].items():
+            st.markdown(f"**{platform}｜匹配分 {data['匹配分']} / 100**")
+            st.write("；".join(data["匹配理由"]))
+    with tab4:
+        for title, notes in report["notes"].items():
+            st.markdown(f"**{title}**")
+            for note in notes: st.write(f"- {note}")
+    with tab5:
+        st.table([{"序号": i, **task} for i, task in enumerate(report["tasks"], start=1)])
+        st.markdown("#### 7天小样本验证路径")
+        st.table([
+            {"阶段": "准备期", "时间": "D1-D2", "核心动作": "补齐认证、物流、竞品、素材和Listing草稿", "输出结果": "测试准备包"},
+            {"阶段": "上架期", "时间": "D3", "核心动作": "完成平台测试页面或询盘页搭建", "输出结果": "初始测试链接"},
+            {"阶段": "测试期", "时间": "D4-D6", "核心动作": "记录曝光、点击、加购、询盘与成本", "输出结果": "测试数据表"},
+            {"阶段": "复盘期", "时间": "D7", "核心动作": "按通过/停止阈值复盘", "输出结果": "继续或停止决定"},
+        ])
+    render_fused_report(client)
+
+
+def main():
+    st.set_page_config(page_title="星狐AI跨境商品诊断舱", page_icon="🦊", layout="wide")
+    st.markdown('<meta name="google" content="notranslate">', unsafe_allow_html=True)
+    load_css()
+    diagnosis_client = get_diagnosis_client()
+    render_diagnosis_reloader(diagnosis_client)
+    st.markdown('<div class="hero notranslate"><div class="pill">决策优先 · 证据约束 · Demo v5 兼容</div><h1>星狐AI跨境商品诊断舱</h1><p>先回答该不该验证、为什么、什么会改变结论；再按需展开全部专业细节。</p></div>', unsafe_allow_html=True)
+
+    with st.expander("快速载入演示案例", expanded=True):
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            sample_choice = st.selectbox("选择一个演示样本", ["不使用样本，手动填写"] + list(SAMPLE_CASES.keys()), help="保留 v5 三类权威样本。")
+        with c2:
+            st.write(""); st.write("")
+            if st.button("载入所选样本", width="stretch"):
+                if sample_choice != "不使用样本，手动填写":
+                    apply_sample(sample_choice); st.success("样本已载入，所有字段仍可修正。"); st.rerun()
+
+    render_image_workspace(diagnosis_client)
+    required_keys = ["name", "category", "factory_price_cny", "retail_price_usd", "estimated_logistics_cny", "customer_type", "business_goal"]
+    completed = sum(bool(st.session_state.get(key)) and st.session_state.get(key) != "请选择" for key in required_keys)
+    st.markdown('<div class="journey-kicker">GUIDED INPUT · 六步确认</div><div class="journey-title">把复杂输入变成一条清晰路径</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="completion-shell">关键输入完成 {completed}/{len(required_keys)}。价格、物流、广告/售后成本与需求证据会直接影响置信度和决策。</div>', unsafe_allow_html=True)
+    st.progress(completed / len(required_keys))
+
+    with st.form("demo_form"):
+        with st.expander("01 · 产品基础", expanded=True):
+            a, b = st.columns(2)
+            with a:
+                name = st.text_input("产品名称 *", placeholder="例如：硬质合金铣刀", key="name")
+                category = st.text_input("产品类目 *", placeholder="例如：工业刀具", key="category")
+            with b:
+                material = st.text_input("产品材质", placeholder="例如：钨钢", key="material")
+                aliases = st.text_input("产品别名", placeholder="多个别名用逗号分隔", key="canonical_aliases")
+            product_description = st.text_area("产品描述 / 使用场景 / 核心卖点", placeholder="用途、目标客户、场景与差异点", key="product_description", height=116)
+            specifications = st.text_area("规格参数", placeholder="例如：直径6mm, 四刃", key="canonical_specifications", height=70)
+            use_scenarios = st.text_input("使用场景", placeholder="例如：CNC加工", key="canonical_use_scenarios")
+        with st.expander("02 · 客户与业务目标"):
+            a, b = st.columns(2)
+            with a:
+                customer_type = st.selectbox("目标客户类型 *", ["请选择", "C端消费者", "小B商家", "工厂客户"], key="customer_type")
+                purchaser_roles = st.text_input("采购角色", placeholder="工厂采购, 经销商", key="canonical_purchaser_roles")
+            with b:
+                business_goal = st.selectbox("企业诉求 *", ["请选择", "测品", "找订单", "做品牌", "清库存", "建渠道"], key="business_goal")
+                user_roles = st.text_input("实际使用者", placeholder="机加工操作员", key="canonical_user_roles")
+        with st.expander("03 · 价格、成本与物流"):
+            a, b, c = st.columns(3)
+            with a:
+                factory_price_cny = st.text_input("出厂价（人民币）*", placeholder="45", key="factory_price_cny")
+                retail_price_usd = st.text_input("建议海外零售价（美元）*", placeholder="29.99", key="retail_price_usd")
+                exchange_rate = st.text_input("汇率（美元兑人民币）*", placeholder="7.2", key="exchange_rate")
+            with b:
+                platform_commission_rate = st.text_input("平台佣金率 *", placeholder="0.15", key="platform_commission_rate")
+                estimated_logistics_cny = st.text_input("估算单件物流费（人民币）*", placeholder="18", key="estimated_logistics_cny")
+                advertising_allowance = st.text_input("广告成本 allowance（人民币，可选）", key="advertising_allowance")
+                return_reserve = st.text_input("退货售后准备金（人民币，可选）", key="return_reserve")
+            with c:
+                weight_g = st.text_input("产品重量（g）*", placeholder="850", key="weight_g")
+                length_cm = st.text_input("包装长度（cm）*", placeholder="25", key="length_cm")
+                width_cm = st.text_input("包装宽度（cm）*", placeholder="15", key="width_cm")
+                height_cm = st.text_input("包装高度（cm）*", placeholder="12", key="height_cm")
+        with st.expander("04 · 合规与特殊属性"):
+            a, b, c, d = st.columns(4)
+            with a: has_battery = st.checkbox("带电", key="has_battery")
+            with b: has_magnet = st.checkbox("带磁", key="has_magnet")
+            with c: is_liquid_or_powder = st.checkbox("液体/粉末", key="is_liquid_or_powder")
+            with d: is_fragile = st.checkbox("易碎", key="is_fragile")
+            certifications = st.multiselect("已有认证", ["无", "CE", "FCC", "RoHS", "FDA", "UKCA", "UL", "REACH"], key="certifications", placeholder="请选择已有认证")
+        with st.expander("05 · 市场、渠道与缺失证据"):
+            a, b = st.columns(2)
+            with a:
+                intended_markets = st.text_input("意向市场", placeholder="德国, 美国", key="canonical_intended_markets")
+                intended_channels = st.text_input("意向渠道", placeholder="B2B平台, 独立站", key="canonical_intended_channels")
+                market_demand_evidence = st.text_area("可核验的市场需求证据", placeholder="公开数据/询盘/成交证据引用；没有请留空", key="market_demand_evidence", height=70)
+                competitor_evidence = st.text_area("竞品证据", placeholder="竞品样本、价格、差评或卖点引用", key="competitor_evidence", height=70)
+            with b:
+                missing_information = st.text_area("仍不确定 / 待补证据", placeholder="目标国认证要求, 实际运价", key="canonical_missing_information", height=70)
+                moq_units = st.text_input("MOQ（可选）", key="moq_units")
+                monthly_capacity = st.text_input("月产能（可选）", key="monthly_capacity")
+                lead_time_days = st.text_input("交期天数（可选）", key="lead_time_days")
+            c1, c2, c3 = st.columns(3)
+            with c1: quality_control_ready = st.selectbox("质量控制是否就绪", ["未知", "是", "否"], key="quality_control_ready")
+            with c2: localized_content_ready = st.selectbox("本地化素材是否就绪", ["未知", "是", "否"], key="localized_content_ready")
+            with c3: operations_owner_ready = st.selectbox("运营负责人是否就绪", ["未知", "是", "否"], key="operations_owner_ready")
+            validation_budget = st.text_input("7天验证预算（人民币，可选）", key="validation_budget")
+            validation_window_days = st.text_input("验证窗口天数（可选）", key="validation_window_days")
+        with st.expander("06 · 复核并确认"):
+            st.info("提交即确认：手动修正优先于图片建议；未知项保持未知；基线报告保存后不会被场景静默覆盖。")
+        submitted = st.form_submit_button("生成诊断报告", width="stretch", help="确认输入并生成决策优先报告")
+
+    if submitted:
+        errors = []
+        if not name.strip(): errors.append("产品名称不能为空。")
+        if not category.strip(): errors.append("产品类目不能为空。")
+        if customer_type == "请选择": errors.append("请选择目标客户类型。")
+        if business_goal == "请选择": errors.append("请选择企业诉求。")
+        factory_price = parse_float("出厂价", factory_price_cny, errors)
+        retail_price = parse_float("建议海外零售价", retail_price_usd, errors)
+        rate = parse_float("汇率", exchange_rate, errors, min_value=.1)
+        commission = parse_float("平台佣金率", platform_commission_rate, errors)
+        logistics = parse_float("估算单件物流费", estimated_logistics_cny, errors)
+        weight = parse_float("产品重量", weight_g, errors)
+        length = parse_float("包装长度", length_cm, errors)
+        width = parse_float("包装宽度", width_cm, errors)
+        height = parse_float("包装高度", height_cm, errors)
+        if commission > .5: errors.append("平台佣金率建议填写0到0.5之间，例如0.15。")
+        if errors:
+            st.error("请先修正以下信息："); [st.write(f"- {error}") for error in errors]; return
+        product = ProductInput(name.strip(), category.strip(), factory_price, retail_price, rate, commission, logistics, weight, length, width, height, material.strip() or "未填写", has_battery, has_magnet, is_liquid_or_powder, is_fragile, certifications or ["无"], customer_type, business_goal, product_description.strip())
+        report = evaluate_product(product)
+        st.session_state["report"], st.session_state["product"] = report, product
+        extras = {
+            "aliases": aliases, "specifications": specifications, "use_scenarios": use_scenarios, "purchaser_roles": purchaser_roles,
+            "user_roles": user_roles, "intended_markets": intended_markets, "intended_channels": intended_channels,
+            "missing_information": missing_information, "advertising_allowance": advertising_allowance, "return_reserve": return_reserve,
+            "market_demand_evidence": market_demand_evidence, "competitor_evidence": competitor_evidence, "moq_units": moq_units,
+            "monthly_capacity": monthly_capacity, "lead_time_days": lead_time_days, "quality_control_ready": quality_control_ready,
+            "localized_content_ready": localized_content_ready, "operations_owner_ready": operations_owner_ready,
+            "validation_budget": validation_budget, "validation_window_days": validation_window_days,
+        }
+        canonical = build_canonical_product(product, extras, report)
+        st.session_state["canonical_product"] = canonical
+        start_remote_diagnosis(diagnosis_client, canonical)
+
+    refresh_remote_diagnosis(diagnosis_client)
+    if "report" in st.session_state and "product" in st.session_state:
+        report, product = st.session_state["report"], st.session_state["product"]
+        fused = st.session_state.get("fused_result", {}).get("report")
+        if not fused:
+            fused = {"schemaVersion": "fused-diagnosis-report-v1", "executionSummary": {"totalScore": report["total_score"], "conclusion": report["decision"]["综合结论"]}, "confidence": {"overall": .5}, "missingEvidence": ["v2 深度报告仍在生成"]}
+        st.markdown("---")
+        st.markdown(f'<div class="report-title"><h2>产品适配度诊断报告</h2><p>诊断对象：{html.escape(product.name)} ｜ v5 兼容 + 决策模型 v2</p></div>', unsafe_allow_html=True)
+        normalized = render_decision_cockpit(fused)
+        md = generate_markdown_report(product, report)
+        st.markdown("<small>专业版 v5 完整报告（执行摘要、经营测算、七维评分、平台、风险、OPC 与7天路径）默认收起，原有内容完整保留。</small>", unsafe_allow_html=True)
+        st.download_button("下载完整诊断报告", md, file_name=f"{product.name}_跨境电商适配度诊断报告.md", mime="text/markdown", width="stretch")
+        render_module_exploration(normalized)
+        render_scenario_lab(diagnosis_client, normalized, fused)
+        show_professional = st.toggle("展开专业版 v5 完整报告、证据与反馈", value=False)
+        if show_professional:
+            render_professional_report(product, report, diagnosis_client)
 
 
 if __name__ == "__main__":

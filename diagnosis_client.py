@@ -55,6 +55,9 @@ class DiagnosisApiClient:
     def result(self, diagnosis_id: str, access_token: str) -> Dict[str, Any]:
         return self._request("GET", f"/api/diagnoses/{diagnosis_id}/result", access_token=access_token)["data"]
 
+    def scenario(self, diagnosis_id: str, access_token: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self._request("POST", f"/api/diagnoses/{diagnosis_id}/scenarios", payload, access_token=access_token)["data"]
+
     def feedback(self, diagnosis_id: str, access_token: str, usefulness: int, accuracy: int, comment: str, inaccurate_topics=None) -> Dict[str, Any]:
         payload = {"usefulnessScore": usefulness, "accuracyScore": accuracy, "comment": comment[:1000], "inaccurateTopics": list(inaccurate_topics or [])[:20]}
         return self._request("POST", f"/api/diagnoses/{diagnosis_id}/feedback", payload, access_token=access_token)["data"]
